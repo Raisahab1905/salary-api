@@ -1,22 +1,26 @@
-FROM maven:3.6.3-openjdk-17 as builder
+# Use official Maven image with JDK 17
+FROM maven:3.9.3-eclipse-temurin-17 AS build
 
-WORKDIR /workspace
+# Set working directory inside container
+WORKDIR /app
 
+# Copy pom.xml and download dependencies first (cached)
 COPY pom.xml .
-COPY src/ src/
+RUN mvn dependency:go-offline -B
 
+# Copy source code
+COPY src ./src
+
+# Build the project
 RUN mvn clean package -DskipTests
 
-FROM alpine:3.18.0
+# Use a lightweight JDK 17 runtime for running the app
+FROM eclipse-temurin:17-jdk-alpine
 
-LABEL authors="Opstree Solution" \
-      contact="opensource@opstree.com" \
-      version="v0.1.0" \
-      service="salary-api"
+WORKDIR /app
 
-RUN apk update && \
-    apk add openjdk17
+# Copy the built jar from the build stage
+COPY --from=build /app/target/*.jar ./app.jar
 
-COPY --from=builder /workspace/target/salary-0.1.0-RELEASE.jar /app/salary.jar
-EXPOSE 8080
-ENTRYPOINT ["/usr/bin/java", "-jar", "/app/salary.jar"]
+# Run the app
+ENTRYPOINT ["java", "-jar", "app.jar"]
