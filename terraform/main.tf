@@ -182,7 +182,7 @@ resource "aws_security_group" "app_sg" {
     from_port       = 8080
     to_port         = 8080
     protocol        = "tcp"
-    security_groups = [aws_security_group.alb_sg.id]  # Allow ALB traffic
+    security_groups = [aws_security_group.alb_sg.id] # Allow ALB traffic
   }
 
   ingress {
@@ -230,7 +230,7 @@ resource "aws_lb_target_group" "app_tg" {
   vpc_id      = aws_vpc.main.id
 
   health_check {
-    path                = "/api/v1/employee/health"
+    path                = "/actuator/health"
     interval            = 30
     timeout             = 5
     healthy_threshold   = 2
@@ -259,7 +259,7 @@ resource "aws_lb_listener" "app_listener" {
 # EC2 Instances
 # ------------------------
 resource "aws_instance" "scylla" {
-  ami                    = "ami-0bbdd8c17ed981ef9"
+  ami                    = "ami-065778886ef8ec7c8"
   instance_type          = var.scylla_instance_type
   subnet_id              = aws_subnet.private_b.id
   vpc_security_group_ids = [aws_security_group.app_sg.id]
@@ -284,7 +284,7 @@ EOF
 }
 
 resource "aws_instance" "redis" {
-  ami                    = "ami-0bbdd8c17ed981ef9"
+  ami                    = "ami-065778886ef8ec7c8"
   instance_type          = var.redis_instance_type
   subnet_id              = aws_subnet.private_b.id
   vpc_security_group_ids = [aws_security_group.app_sg.id]
@@ -309,7 +309,7 @@ EOF
 }
 
 resource "aws_instance" "app" {
-  ami                    = "ami-0bbdd8c17ed981ef9"
+  ami                    = "ami-065778886ef8ec7c8"
   instance_type          = var.app_instance_type
   subnet_id              = aws_subnet.private_a.id
   vpc_security_group_ids = [aws_security_group.app_sg.id]
@@ -334,17 +334,17 @@ export REDIS_HOST=${aws_instance.redis.private_ip}
 
 # Clone repo
 cd /home/ubuntu
-git clone https://github.com/himanshu085/employee-api.git
-cd employee-api
+git clone https://github.com/Raisahab1905/salary-api.git
+cd salary-api
 
 # Build Docker image
-docker build -t employee-api:latest .
+docker build -t salary-api:latest .
 
 # Run container with environment variables
 docker run -d -p 8080:8080 \
   -e SCYLLA_HOST=$SCYLLA_HOST \
   -e REDIS_HOST=$REDIS_HOST \
-  employee-api:latest
+  salary-api:latest
 EOF
 }
 
