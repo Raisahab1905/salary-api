@@ -1,24 +1,59 @@
-variable "region" {
-  description = "AWS region"
-  default     = "us-west-2"
+variable "aws_region" {
+  type    = string
+  default = "us-west-2"
 }
 
-variable "scylla_ami" {
-  description = "AMI ID for ScyllaDB nodes"
-  default     = "ami-03aa99ddf5498ceb9"  # Replace with actual ScyllaDB AMI
+variable "project" {
+  type    = string
+  default = "otms"
+}
+
+variable "environment" {
+  type    = string
+  default = "dev"
+}
+
+variable "vpc_cidr" {
+  type    = string
+  default = "10.10.0.0/16"
+}
+
+variable "public_subnet_cidr_a" {
+  type    = string
+  default = "10.10.1.0/24"
+}
+
+variable "public_subnet_cidr_b" {
+  type    = string
+  default = "10.10.2.0/24"
+}
+
+variable "private_subnet_cidr_a" {
+  type    = string
+  default = "10.10.3.0/24"
+}
+
+variable "private_subnet_cidr_b" {
+  type    = string
+  default = "10.10.4.0/24"
+}
+
+variable "app_instance_type" {
+  type    = string
+  default = "t3.micro"
 }
 
 variable "scylla_instance_type" {
-  description = "Instance type for ScyllaDB nodes"
-  default     = "i3.xlarge"  # Recommended for ScyllaDB
+  type    = string
+  default = "t3.small"
 }
 
-variable "scylla_keyspace" {
-  description = "ScyllaDB keyspace name"
-  default     = "salary_api"
+variable "redis_instance_type" {
+  type    = string
+  default = "t3.small"
 }
 
-variable "redis_node_type" {
-  description = "Elasticache Redis node type"
-  default     = "cache.t3.micro"
+variable "app_image" {
+  type        = string
+  description = "Container image"
 }

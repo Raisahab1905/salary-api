@@ -1,89 +1,195 @@
-provider "aws" {
-  region = var.region
-}
+# ------------------------
+# Data Sources
+# ------------------------
+data "aws_availability_zones" "available" {}
 
-# VPC (same as before)
+# ------------------------
+# VPC
+# ------------------------
 resource "aws_vpc" "main" {
-  cidr_block           = "10.0.0.0/16"
+  cidr_block           = var.vpc_cidr
+  enable_dns_support   = true
   enable_dns_hostnames = true
+
   tags = {
-    Name = "three-tier-vpc"
+    Name = "${var.project}-${var.environment}-vpc"
   }
 }
 
-# Subnets (same as before)
-resource "aws_subnet" "public" {
-  count                   = 2
+# ------------------------
+# Subnets
+# ------------------------
+resource "aws_subnet" "public_a" {
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = element(["10.0.1.0/24", "10.0.2.0/24"], count.index)
-  availability_zone       = element(["${var.region}a", "${var.region}b"], count.index)
+  cidr_block              = var.public_subnet_cidr_a
+  availability_zone       = data.aws_availability_zones.available.names[0]
   map_public_ip_on_launch = true
+
   tags = {
-    Name = "public-subnet-${count.index + 1}"
+    Name = "${var.project}-${var.environment}-public-a"
   }
 }
 
-resource "aws_subnet" "private_app" {
-  count             = 2
+resource "aws_subnet" "public_b" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = var.public_subnet_cidr_b
+  availability_zone       = data.aws_availability_zones.available.names[1]
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${var.project}-${var.environment}-public-b"
+  }
+}
+
+resource "aws_subnet" "private_a" {
   vpc_id            = aws_vpc.main.id
-  cidr_block        = element(["10.0.3.0/24", "10.0.4.0/24"], count.index)
-  availability_zone = element(["${var.region}a", "${var.region}b"], count.index)
+  cidr_block        = var.private_subnet_cidr_a
+  availability_zone = data.aws_availability_zones.available.names[0]
+
   tags = {
-    Name = "private-app-subnet-${count.index + 1}"
+    Name = "${var.project}-${var.environment}-private-a"
   }
 }
 
-resource "aws_subnet" "private_db" {
-  count             = 2
+resource "aws_subnet" "private_b" {
   vpc_id            = aws_vpc.main.id
-  cidr_block        = element(["10.0.5.0/24", "10.0.6.0/24"], count.index)
-  availability_zone = element(["${var.region}a", "${var.region}b"], count.index)
+  cidr_block        = var.private_subnet_cidr_b
+  availability_zone = data.aws_availability_zones.available.names[1]
+
   tags = {
-    Name = "private-db-subnet-${count.index + 1}"
+    Name = "${var.project}-${var.environment}-private-b"
   }
 }
 
-# Internet Gateway, NAT Gateway, Route Tables (same as before)
+# ------------------------
+# Internet Gateway
+# ------------------------
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.main.id
 
-# Security Groups - Modified for ScyllaDB and Redis
-resource "aws_security_group" "web" {
-  # ... (same as before)
+  tags = {
+    Name = "${var.project}-${var.environment}-igw"
+  }
 }
 
-resource "aws_security_group" "app" {
-  name        = "app-sg"
-  description = "Allow traffic from web layer to app layer"
-  vpc_id      = aws_vpc.main.id
+# ------------------------
+# Elastic IP for NAT
+# ------------------------
+resource "aws_eip" "nat" {
+  domain     = "vpc"
+  depends_on = [aws_internet_gateway.igw]
+}
+
+# ------------------------
+# NAT Gateway
+# ------------------------
+resource "aws_nat_gateway" "nat" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public_a.id
+
+  tags = {
+    Name = "${var.project}-${var.environment}-nat"
+  }
+
+  depends_on = [aws_internet_gateway.igw]
+}
+
+# ------------------------
+# Route Tables
+# ------------------------
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+
+  tags = {
+    Name = "${var.project}-${var.environment}-public-rt"
+  }
+}
+
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat.id
+  }
+
+  tags = {
+    Name = "${var.project}-${var.environment}-private-rt"
+  }
+}
+
+# ------------------------
+# Route Table Associations
+# ------------------------
+resource "aws_route_table_association" "public_assoc_a" {
+  subnet_id      = aws_subnet.public_a.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "public_assoc_b" {
+  subnet_id      = aws_subnet.public_b.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "private_assoc_a" {
+  subnet_id      = aws_subnet.private_a.id
+  route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table_association" "private_assoc_b" {
+  subnet_id      = aws_subnet.private_b.id
+  route_table_id = aws_route_table.private.id
+}
+
+# ------------------------
+# Security Groups
+# ------------------------
+# ALB SG
+resource "aws_security_group" "alb_sg" {
+  vpc_id = aws_vpc.main.id
+  name   = "${var.project}-${var.environment}-alb-sg"
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.project}-${var.environment}-alb-sg"
+  }
+}
+
+# App EC2 SG
+resource "aws_security_group" "app_sg" {
+  vpc_id = aws_vpc.main.id
+  name   = "${var.project}-${var.environment}-sg"
 
   ingress {
     from_port       = 8080
     to_port         = 8080
     protocol        = "tcp"
-    security_groups = [aws_security_group.web.id]
+    security_groups = [aws_security_group.alb_sg.id]  # Allow ALB traffic
   }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "app-sg"
-  }
-}
-
-resource "aws_security_group" "scylla" {
-  name        = "scylla-sg"
-  description = "Allow traffic from app layer to ScyllaDB"
-  vpc_id      = aws_vpc.main.id
 
   ingress {
-    from_port       = 9042  # ScyllaDB default port
-    to_port         = 9042
-    protocol        = "tcp"
-    security_groups = [aws_security_group.app.id]
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # SSH access
   }
 
   egress {
@@ -94,142 +200,159 @@ resource "aws_security_group" "scylla" {
   }
 
   tags = {
-    Name = "scylla-sg"
+    Name = "${var.project}-${var.environment}-sg"
   }
 }
 
-resource "aws_security_group" "redis" {
-  name        = "redis-sg"
-  description = "Allow traffic from app layer to Redis"
+# ------------------------
+# Application Load Balancer
+# ------------------------
+resource "aws_lb" "app_alb" {
+  name               = "${var.project}-${var.environment}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb_sg.id]
+  subnets            = [aws_subnet.public_a.id, aws_subnet.public_b.id]
+
+  tags = {
+    Name = "${var.project}-${var.environment}-alb"
+  }
+
+  depends_on = [aws_subnet.public_a, aws_subnet.public_b]
+}
+
+# Target Group
+resource "aws_lb_target_group" "app_tg" {
+  name        = "${var.project}-${var.environment}-tg"
+  port        = 8080
+  protocol    = "HTTP"
+  target_type = "instance"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    from_port       = 6379  # Redis default port
-    to_port         = 6379
-    protocol        = "tcp"
-    security_groups = [aws_security_group.app.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  health_check {
+    path                = "/api/v1/employee/health"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    matcher             = "200-299"
   }
 
   tags = {
-    Name = "redis-sg"
+    Name = "${var.project}-${var.environment}-tg"
   }
 }
 
-# ALB and Target Group (same as before)
+# Listener
+resource "aws_lb_listener" "app_listener" {
+  load_balancer_arn = aws_lb.app_alb.arn
+  port              = 80
+  protocol          = "HTTP"
 
-# ScyllaDB Cluster (using EC2 instances as ScyllaDB Cloud isn't directly available in Terraform)
-resource "aws_instance" "scylla_node" {
-  count         = 3  # 3-node cluster for high availability
-  ami           = var.scylla_ami
-  instance_type = var.scylla_instance_type
-  subnet_id     = aws_subnet.private_db[count.index % length(aws_subnet.private_db)].id
-  vpc_security_group_ids = [aws_security_group.scylla.id]
-  
-  # IAM instance profile for ScyllaDB (if needed)
-  iam_instance_profile = aws_iam_instance_profile.scylla_instance_profile.name
-  
-  tags = {
-    Name = "scylla-node-${count.index + 1}"
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app_tg.arn
   }
+}
+
+# ------------------------
+# EC2 Instances
+# ------------------------
+resource "aws_instance" "scylla" {
+  ami                    = "ami-0bbdd8c17ed981ef9"
+  instance_type          = var.scylla_instance_type
+  subnet_id              = aws_subnet.private_b.id
+  vpc_security_group_ids = [aws_security_group.app_sg.id]
+
+  tags = {
+    Name = "${var.project}-${var.environment}-scylla"
+  }
+
+  depends_on = [aws_route_table_association.private_assoc_b]
 
   user_data = <<-EOF
-              #!/bin/bash
-              # ScyllaDB installation script
-              curl -L http://downloads.scylladb.com/deb/ubuntu/scylla-5.1.list -o /etc/apt/sources.list.d/scylla.list
-              apt-get update
-              apt-get install -y scylla
-              scylla_setup --disks /dev/nvme1n1 --nic eth0 --setup-nic --no-verify-package
-              systemctl start scylla-server
-              EOF
+#!/bin/bash
+apt-get update -y
+apt-get install -y docker.io
+systemctl enable docker
+systemctl start docker
+usermod -aG docker ubuntu
+
+# Run Scylla container
+docker run -d --name scylla -p 9042:9042 scylladb/scylla:latest
+EOF
 }
 
-# Elasticache Redis Cluster
-resource "aws_elasticache_cluster" "redis" {
-  cluster_id           = "salary-api-redis"
-  engine               = "redis"
-  node_type            = var.redis_node_type
-  num_cache_nodes      = 1
-  parameter_group_name = "default.redis6.x"
-  port                 = 6379
-  security_group_ids   = [aws_security_group.redis.id]
-  subnet_group_name    = aws_elasticache_subnet_group.redis.name
+resource "aws_instance" "redis" {
+  ami                    = "ami-0bbdd8c17ed981ef9"
+  instance_type          = var.redis_instance_type
+  subnet_id              = aws_subnet.private_b.id
+  vpc_security_group_ids = [aws_security_group.app_sg.id]
+
+  tags = {
+    Name = "${var.project}-${var.environment}-redis"
+  }
+
+  depends_on = [aws_route_table_association.private_assoc_b]
+
+  user_data = <<-EOF
+#!/bin/bash
+apt-get update -y
+apt-get install -y docker.io
+systemctl enable docker
+systemctl start docker
+usermod -aG docker ubuntu
+
+# Run Redis container
+docker run -d --name redis -p 6379:6379 redis:latest
+EOF
 }
 
-resource "aws_elasticache_subnet_group" "redis" {
-  name       = "redis-subnet-group"
-  subnet_ids = aws_subnet.private_db[*].id
+resource "aws_instance" "app" {
+  ami                    = "ami-0bbdd8c17ed981ef9"
+  instance_type          = var.app_instance_type
+  subnet_id              = aws_subnet.private_a.id
+  vpc_security_group_ids = [aws_security_group.app_sg.id]
+
+  tags = {
+    Name = "${var.project}-${var.environment}-app"
+  }
+
+  depends_on = [aws_route_table_association.private_assoc_a, aws_instance.scylla, aws_instance.redis]
+
+  user_data = <<-EOF
+#!/bin/bash
+apt-get update -y
+apt-get install -y docker.io git
+systemctl enable docker
+systemctl start docker
+usermod -aG docker ubuntu
+
+# Set environment variables
+export SCYLLA_HOST=${aws_instance.scylla.private_ip}
+export REDIS_HOST=${aws_instance.redis.private_ip}
+
+# Clone repo
+cd /home/ubuntu
+git clone https://github.com/himanshu085/employee-api.git
+cd employee-api
+
+# Build Docker image
+docker build -t employee-api:latest .
+
+# Run container with environment variables
+docker run -d -p 8080:8080 \
+  -e SCYLLA_HOST=$SCYLLA_HOST \
+  -e REDIS_HOST=$REDIS_HOST \
+  employee-api:latest
+EOF
 }
 
-# ECS Configuration (updated environment variables)
-resource "aws_ecs_task_definition" "salary_api" {
-  family                   = "salary-api"
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  cpu                      = 256
-  memory                   = 512
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
-
-  container_definitions = jsonencode([{
-    name      = "salary-api"
-    image     = "${aws_ecr_repository.salary_api.repository_url}:latest"
-    essential = true
-    portMappings = [{
-      containerPort = 8080
-      hostPort      = 8080
-    }]
-    environment = [
-      {
-        name  = "SCYLLA_HOSTS"
-        value = join(",", aws_instance.scylla_node[*].private_ip)
-      },
-      {
-        name  = "SCYLLA_KEYSPACE"
-        value = var.scylla_keyspace
-      },
-      {
-        name  = "REDIS_HOST"
-        value = aws_elasticache_cluster.redis.cache_nodes[0].address
-      },
-      {
-        name  = "REDIS_PORT"
-        value = tostring(aws_elasticache_cluster.redis.port)
-      }
-    ]
-    logConfiguration = {
-      logDriver = "awslogs"
-      options = {
-        "awslogs-group"         = "/ecs/salary-api"
-        "awslogs-region"        = var.region
-        "awslogs-stream-prefix" = "ecs"
-      }
-    }
-  }])
-}
-
-# IAM Role for ScyllaDB instances
-resource "aws_iam_instance_profile" "scylla_instance_profile" {
-  name = "scylla-instance-profile"
-  role = aws_iam_role.scylla_instance_role.name
-}
-
-resource "aws_iam_role" "scylla_instance_role" {
-  name = "scylla-instance-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "ec2.amazonaws.com"
-      }
-    }]
-  })
+# ------------------------
+# Register App Instance with Target Group
+# ------------------------
+resource "aws_lb_target_group_attachment" "app_tg_attachment" {
+  target_group_arn = aws_lb_target_group.app_tg.arn
+  target_id        = aws_instance.app.id
+  port             = 8080
 }

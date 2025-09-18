@@ -1,19 +1,19 @@
-output "scylla_private_ips" {
-  description = "Private IP addresses of ScyllaDB nodes"
-  value       = aws_instance.scylla_node[*].private_ip
+output "alb_dns" {
+  description = "DNS of the ALB"
+  value       = aws_lb.app_alb.dns_name
 }
 
-output "redis_endpoint" {
-  description = "Redis endpoint"
-  value       = aws_elasticache_cluster.redis.cache_nodes[0].address
+output "app_private_ip" {
+  description = "App EC2 Private IP"
+  value       = aws_instance.app.private_ip
 }
 
-output "alb_dns_name" {
-  description = "The DNS name of the Application Load Balancer"
-  value       = aws_lb.web.dns_name
+output "scylla_private_ip" {
+  description = "Scylla EC2 Private IP"
+  value       = aws_instance.scylla.private_ip
 }
 
-output "ecr_repository_url" {
-  description = "The URL of the ECR repository"
-  value       = aws_ecr_repository.salary_api.repository_url
+output "redis_private_ip" {
+  description = "Redis EC2 Private IP"
+  value       = aws_instance.redis.private_ip
 }
