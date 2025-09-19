@@ -197,6 +197,60 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
+# Scylla SG
+
+resource "aws_security_group" "scylla_sg" {
+  vpc_id = aws_vpc.main.id
+  name   = "${var.project}-${var.environment}-scylla-sg"
+
+  ingress {
+    from_port       = 9042
+    to_port         = 9042
+    protocol        = "tcp"
+    security_groups = [aws_security_group.app_sg.id]  # allow app to connect
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project}-${var.environment}-scylla-sg"
+    Project     = var.project
+    Environment = var.environment
+  }
+}
+
+# Redis SG
+
+resource "aws_security_group" "redis_sg" {
+  vpc_id = aws_vpc.main.id
+  name   = "${var.project}-${var.environment}-redis-sg"
+
+  ingress {
+    from_port       = 6379
+    to_port         = 6379
+    protocol        = "tcp"
+    security_groups = [aws_security_group.app_sg.id]  # allow app to connect
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project}-${var.environment}-redis-sg"
+    Project     = var.project
+    Environment = var.environment
+  }
+}
+
 # Bastion SG
 resource "aws_security_group" "bastion_sg" {
   vpc_id = aws_vpc.main.id
@@ -376,14 +430,11 @@ cd /home/ubuntu
 git clone https://github.com/Raisahab1905/salary-api.git
 cd salary-api
 
-# Build Docker image using Docker Compose
-docker-compose up --build -d
-
-# Run container with environment variables
 docker run -d -p 8080:8080 \
   -e SCYLLA_HOST=$SCYLLA_HOST \
   -e REDIS_HOST=$REDIS_HOST \
-  salary-api:latest
+  ${var.app_image}
+
 EOF
 }
 
