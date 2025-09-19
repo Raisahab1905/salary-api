@@ -353,7 +353,7 @@ resource "aws_instance" "app" {
   user_data = <<-EOF
 #!/bin/bash
 apt-get update -y
-apt-get install -y docker.io git
+apt-get install -y docker.io docker-compose git
 systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
@@ -371,7 +371,7 @@ git clone https://github.com/Raisahab1905/salary-api.git
 cd salary-api
 
 # Build Docker image
-docker build -t salary-api:latest .
+docker compose up --build -d
 
 # Run container with environment variables
 docker run -d -p 8080:8080 \
