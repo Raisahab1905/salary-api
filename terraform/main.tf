@@ -185,13 +185,6 @@ resource "aws_security_group" "app_sg" {
     security_groups = [aws_security_group.alb_sg.id] # Allow ALB traffic
   }
 
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # SSH access
-  }
-
   egress {
     from_port   = 0
     to_port     = 0
@@ -202,6 +195,40 @@ resource "aws_security_group" "app_sg" {
   tags = {
     Name = "${var.project}-${var.environment}-sg"
   }
+}
+
+# Bastion SG
+resource "aws_security_group" "bastion_sg" {
+  vpc_id = aws_vpc.main.id
+  name   = "${var.project}-${var.environment}-bastion-sg"
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["YOUR_PUBLIC_IP/32"] # <-- replace with your IP
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.project}-${var.environment}-bastion-sg"
+  }
+}
+
+# Allow Bastion to SSH into private EC2s
+resource "aws_security_group_rule" "app_ssh_from_bastion" {
+  type                     = "ingress"
+  from_port                = 22
+  to_port                  = 22
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.app_sg.id
+  source_security_group_id = aws_security_group.bastion_sg.id
 }
 
 # ------------------------
@@ -263,6 +290,7 @@ resource "aws_instance" "scylla" {
   instance_type          = var.scylla_instance_type
   subnet_id              = aws_subnet.private_b.id
   vpc_security_group_ids = [aws_security_group.app_sg.id]
+  key_name               = "rai" # Use existing key
 
   tags = {
     Name = "${var.project}-${var.environment}-scylla"
@@ -288,6 +316,7 @@ resource "aws_instance" "redis" {
   instance_type          = var.redis_instance_type
   subnet_id              = aws_subnet.private_b.id
   vpc_security_group_ids = [aws_security_group.app_sg.id]
+  key_name               = "rai"
 
   tags = {
     Name = "${var.project}-${var.environment}-redis"
@@ -313,6 +342,7 @@ resource "aws_instance" "app" {
   instance_type          = var.app_instance_type
   subnet_id              = aws_subnet.private_a.id
   vpc_security_group_ids = [aws_security_group.app_sg.id]
+  key_name               = "rai"
 
   tags = {
     Name = "${var.project}-${var.environment}-app"
@@ -358,4 +388,26 @@ resource "aws_lb_target_group_attachment" "app_tg_attachment" {
   target_group_arn = aws_lb_target_group.app_tg.arn
   target_id        = aws_instance.app.id
   port             = 8080
+}
+
+# ------------------------
+# Bastion Host
+# ------------------------
+resource "aws_instance" "bastion" {
+  ami                         = "ami-065778886ef8ec7c8"
+  instance_type               = "t2.micro"
+  subnet_id                   = aws_subnet.public_a.id
+  vpc_security_group_ids      = [aws_security_group.bastion_sg.id]
+  associate_public_ip_address = true
+  key_name                    = "rai"
+
+  tags = {
+    Name = "${var.project}-${var.environment}-bastion"
+  }
+
+  user_data = <<-EOF
+#!/bin/bash
+apt-get update -y
+apt-get install -y htop
+EOF
 }
