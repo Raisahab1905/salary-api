@@ -353,12 +353,18 @@ resource "aws_instance" "app" {
   user_data = <<-EOF
 #!/bin/bash
 apt-get update -y
-apt-get install -y docker.io docker-compose git
+apt-get install -y docker.io curl git
+
+# Install Docker Compose v2
+DOCKER_COMPOSE_VERSION="v2.10.0"  # You can specify the latest version here
+curl -L "https://github.com/docker/compose/releases/download/$DOCKER_COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+
 systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
 
-# Wait for Scylla + Redis (basic wait)
+# Wait for Scylla and Redis (basic wait)
 sleep 60
 
 # Set environment variables
@@ -370,8 +376,8 @@ cd /home/ubuntu
 git clone https://github.com/Raisahab1905/salary-api.git
 cd salary-api
 
-# Build Docker image
-docker compose up --build -d
+# Build Docker image using Docker Compose
+docker-compose up --build -d
 
 # Run container with environment variables
 docker run -d -p 8080:8080 \
