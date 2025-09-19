@@ -232,9 +232,9 @@ resource "aws_lb_target_group" "app_tg" {
   health_check {
     path                = "/actuator/health"
     interval            = 30
-    timeout             = 5
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
+    timeout             = 10
+    healthy_threshold   = 5
+    unhealthy_threshold = 5
     matcher             = "200-299"
   }
 
@@ -327,6 +327,9 @@ apt-get install -y docker.io git
 systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
+
+# Wait for Scylla + Redis (basic wait)
+sleep 60
 
 # Set environment variables
 export SCYLLA_HOST=${aws_instance.scylla.private_ip}
