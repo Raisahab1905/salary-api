@@ -153,10 +153,18 @@ resource "aws_route_table_association" "private_assoc_b" {
 resource "aws_security_group" "alb_sg" {
   vpc_id = aws_vpc.main.id
   name   = "${var.project}-${var.environment}-alb-sg"
+  description = "Allow internet to ALB and ALB to App"
 
   ingress {
     from_port   = 80
     to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -202,6 +210,7 @@ resource "aws_security_group" "app_sg" {
 resource "aws_security_group" "scylla_sg" {
   vpc_id = aws_vpc.main.id
   name   = "${var.project}-${var.environment}-scylla-sg"
+  description = "Allow Scylla traffic from app layer"
 
   ingress {
     from_port       = 9042
@@ -229,6 +238,7 @@ resource "aws_security_group" "scylla_sg" {
 resource "aws_security_group" "redis_sg" {
   vpc_id = aws_vpc.main.id
   name   = "${var.project}-${var.environment}-redis-sg"
+  description = "Allow Redis traffic from app layer"
 
   ingress {
     from_port       = 6379
@@ -297,6 +307,8 @@ resource "aws_lb" "app_alb" {
 
   tags = {
     Name = "${var.project}-${var.environment}-alb"
+    Environment = var.environment
+    Project     = var.project
   }
 
   depends_on = [aws_subnet.public_a, aws_subnet.public_b]
@@ -321,6 +333,8 @@ resource "aws_lb_target_group" "app_tg" {
 
   tags = {
     Name = "${var.project}-${var.environment}-tg"
+    Environment = var.environment
+    Project     = var.project
   }
 }
 
@@ -400,6 +414,8 @@ resource "aws_instance" "app" {
 
   tags = {
     Name = "${var.project}-${var.environment}-app"
+    Environment = var.environment
+    Project     = var.project
   }
 
   depends_on = [aws_route_table_association.private_assoc_a, aws_instance.scylla, aws_instance.redis]
