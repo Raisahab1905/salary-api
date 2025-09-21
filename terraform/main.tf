@@ -323,12 +323,15 @@ resource "aws_lb_target_group" "app_tg" {
   vpc_id      = aws_vpc.main.id
 
   health_check {
-    path                = "/actuator/health"
+    enabled             = true
     interval            = 30
-    timeout             = 10
-    healthy_threshold   = 5
-    unhealthy_threshold = 5
-    matcher             = "200-299"
+    path                = "/actuator/health"  # Spring Boot actuator endpoint
+    port                = "8080"
+    protocol            = "HTTP"
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    matcher             = "200-399"
   }
 
   tags = {
