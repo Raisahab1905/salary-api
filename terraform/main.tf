@@ -343,7 +343,7 @@ resource "aws_instance" "scylla" {
   ami                    = "ami-065778886ef8ec7c8"
   instance_type          = var.scylla_instance_type
   subnet_id              = aws_subnet.private_b.id
-  vpc_security_group_ids = [aws_security_group.app_sg.id]
+  vpc_security_group_ids = [aws_security_group.scylla_sg.id]
   key_name               = "rai" # Use existing key
 
   tags = {
@@ -369,7 +369,7 @@ resource "aws_instance" "redis" {
   ami                    = "ami-065778886ef8ec7c8"
   instance_type          = var.redis_instance_type
   subnet_id              = aws_subnet.private_b.id
-  vpc_security_group_ids = [aws_security_group.app_sg.id]
+  vpc_security_group_ids = [aws_security_group.redis_sg.id]
   key_name               = "rai"
 
   tags = {
