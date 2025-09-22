@@ -459,8 +459,8 @@ usermod -aG docker ubuntu
 sleep 60
 
 # Set environment variables
-export SCYLLA_HOST=${aws_instance.scylla.private_ip}
-export REDIS_HOST=${aws_instance.redis.private_ip}
+SCYLLA_HOST="${aws_instance.scylla.private_ip}"
+REDIS_HOST="${aws_instance.redis.private_ip}"
 
 # Clone repo
 cd /home/ubuntu
