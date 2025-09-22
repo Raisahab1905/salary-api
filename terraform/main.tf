@@ -178,6 +178,8 @@ resource "aws_security_group" "alb_sg" {
 
   tags = {
     Name = "${var.project}-${var.environment}-alb-sg"
+    Project     = var.project
+    Environment = var.environment
   }
 }
 
@@ -202,6 +204,8 @@ resource "aws_security_group" "app_sg" {
 
   tags = {
     Name = "${var.project}-${var.environment}-sg"
+    Project     = var.project
+    Environment = var.environment
   }
 }
 
@@ -245,6 +249,13 @@ resource "aws_security_group" "redis_sg" {
     to_port         = 6379
     protocol        = "tcp"
     security_groups = [aws_security_group.app_sg.id]  # allow app to connect
+  }
+  
+  ingress {
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.basion_sg.id]  # allow app to connect
   }
 
   egress {
