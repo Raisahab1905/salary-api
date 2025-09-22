@@ -255,7 +255,7 @@ resource "aws_security_group" "redis_sg" {
     from_port       = 22
     to_port         = 22
     protocol        = "tcp"
-    security_groups = [aws_security_group.basion_sg.id]  # allow app to connect
+    security_groups = [aws_security_group.bastion_sg.id]  # allow app to connect
   }
 
   egress {
