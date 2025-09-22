@@ -310,16 +310,6 @@ resource "aws_security_group" "bastion_sg" {
   }
 }
 
-# Allow Bastion to SSH into private EC2s
-resource "aws_security_group_rule" "app_ssh_from_bastion" {
-  type                     = "ingress"
-  from_port                = 22
-  to_port                  = 22
-  protocol                 = "tcp"
-  security_group_id        = aws_security_group.app_sg.id
-  source_security_group_id = aws_security_group.bastion_sg.id
-}
-
 # ------------------------
 # Application Load Balancer
 # ------------------------
