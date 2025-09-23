@@ -31,7 +31,7 @@ services:
       scylla:
         condition: service_healthy
     volumes:
-      - ./migration:/migrations
+      - ./migrations:/migrations
     entrypoint: ["/bin/bash", "-c"]
     command: |
       echo 'Waiting for Scylla...'
