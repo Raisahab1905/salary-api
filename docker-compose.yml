@@ -32,9 +32,9 @@ services:
         condition: service_healthy
     volumes:
       - ./migrations:/migrations
-    entrypoint: /bin/bash
+    entrypoint: ["/bin/bash", "-c"]
     command: |
-      -c "
+      "
       echo 'Waiting for Scylla...'
       until cqlsh scylla -e 'DESCRIBE KEYSPACES' > /dev/null 2>&1; do
         echo 'Scylla not ready, retrying...'
