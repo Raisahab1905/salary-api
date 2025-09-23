@@ -25,7 +25,7 @@ services:
       - redis-data:/data
 
   migrate:
-    image: cassandra:4.1
+    image: scylladb/scylla:latest
     container_name: migrate
     depends_on:
       scylla:
