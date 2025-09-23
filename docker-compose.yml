@@ -32,26 +32,28 @@ services:
         condition: service_healthy
     volumes:
       - ./migrations:/migrations
-    entrypoint: ["/bin/bash", "-c"]
+    entrypoint: /bin/bash
     command: |
+      -c "
       echo 'Waiting for Scylla...'
       until cqlsh scylla -e 'DESCRIBE KEYSPACES' > /dev/null 2>&1; do
         echo 'Scylla not ready, retrying...'
         sleep 5
       done
       echo 'Creating keyspace if missing...'
-      cqlsh scylla -e "
+      cqlsh scylla -e \"
         CREATE KEYSPACE IF NOT EXISTS employee_db
         WITH replication = {'class':'SimpleStrategy','replication_factor':1};
-      "
+      \"
       echo 'Running migrations...'
       for f in /migrations/*.cql; do
-        [ -e "$f" ] || continue
-        echo "Applying $f..."
-        cqlsh scylla -f "$f"
+        [ -e \"$f\" ] || continue
+        echo \"Applying $f...\"
+        cqlsh scylla -f \"$f\"
       done
       echo 'Migrations completed.'
-    restart: on-failure
+      "
+    restart: "on-failure"
 
   salary-api:
     build: .
@@ -62,10 +64,10 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SCYLLA_HOST: scylla
+      SCYLLA_HOST: "scylla"
       SCYLLA_PORT: "9042"
-      SCYLLA_KEYSPACE: employee_db
-      REDIS_HOST: redis
+      SCYLLA_KEYSPACE: "employee_db"
+      REDIS_HOST: "redis"
       REDIS_PORT: "6379"
 
 volumes:
