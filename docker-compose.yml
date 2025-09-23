@@ -45,7 +45,7 @@ services:
         WITH replication = {'class':'SimpleStrategy','replication_factor':1};
       "
       echo 'Running migrations...'
-      for f in /migrations/*.cql; do
+      for f in /migrations/*.sql; do
         [ -e "$f" ] || continue
         echo "Applying $f..."
         cqlsh scylla -f "$f"
