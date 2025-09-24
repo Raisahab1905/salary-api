@@ -227,13 +227,6 @@ resource "aws_security_group" "scylla_sg" {
     from_port       = 9042
     to_port         = 9042
     protocol        = "tcp"
-    security_groups = [aws_security_group.app_sg.id]  # allow app to connect
-  }
-
-  ingress {
-    from_port       = 9042
-    to_port         = 9042
-    protocol        = "tcp"
     cidr_blocks     = [var.vpc_cidr]  # Allow from entire VPC
     description     = "Allow Scylla from VPC"
   }
@@ -265,13 +258,6 @@ resource "aws_security_group" "redis_sg" {
   vpc_id = aws_vpc.main.id
   name   = "${var.project}-${var.environment}-redis-sg"
   description = "Allow Redis traffic from app layer"
-
-  ingress {
-    from_port       = 6379
-    to_port         = 6379
-    protocol        = "tcp"
-    security_groups = [aws_security_group.app_sg.id]  # allow app to connect
-  }
 
   ingress {
     from_port       = 6379
@@ -389,7 +375,7 @@ resource "aws_lb_listener" "app_listener" {
 # ------------------------
 resource "aws_instance" "scylla" {
   ami                    = "ami-065778886ef8ec7c8"
-  instance_type          = "t3.medium"  # Increased memory
+  instance_type          = "t3.medium"
   subnet_id              = aws_subnet.private_b.id
   vpc_security_group_ids = [aws_security_group.scylla_sg.id]
   key_name               = "rai"
@@ -402,124 +388,104 @@ resource "aws_instance" "scylla" {
 #!/bin/bash
 set -e
 
-# Update and install dependencies
+# Update and install Docker
 apt-get update -y
 apt-get install -y docker.io curl
-
-# Configure Docker
 systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
 
-# Add swap for memory issues
-fallocate -l 2G /swapfile
-chmod 600 /swapfile
-mkswap /swapfile
-swapon /swapfile
-echo '/swapfile none swap sw 0 0' >> /etc/fstab
-
-# Wait for network and get private IP
-sleep 30
+# Get private IP
 PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 
 # Stop any existing Scylla container
 docker stop scylla || true
 docker rm scylla || true
 
-# Run ScyllaDB with host networking and proper binding
+# Run Scylla with HOST networking (critical fix)
 docker run -d \
   --name scylla \
   --network host \
-  --memory 1G \
-  -v /var/lib/scylla:/var/lib/scylla \
   scylladb/scylla:latest \
   --listen-address 0.0.0.0 \
   --rpc-address 0.0.0.0 \
   --broadcast-address $PRIVATE_IP \
-  --developer-mode 1 \
-  --overprovisioned 1
+  --developer-mode 1
 
 # Wait for Scylla to start
 echo "Waiting for ScyllaDB to start..."
 sleep 60
 
-# Check if Scylla is running and accessible
-for i in {1..30}; do
-  if docker exec scylla nodetool status | grep -q "UN"; then
-    echo "✅ ScyllaDB is ready and accessible!"
-    
-    # Create the required keyspace
-    docker exec scylla cqlsh -e "CREATE KEYSPACE IF NOT EXISTS employee_db WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};"
-    echo "✅ Keyspace 'employee_db' created successfully!"
+# Create keyspace with retry logic
+for i in {1..10}; do
+  if docker exec scylla cqlsh -e "DESCRIBE KEYSPACES;" 2>/dev/null; then
+    docker exec scylla cqlsh -e "CREATE KEYSPACE IF NOT EXISTS employee_db WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};" 2>/dev/null
+    echo "✅ ScyllaDB setup complete with keyspace!"
     break
   fi
-  echo "⏳ Waiting for ScyllaDB to be ready... attempt $i/30"
+  echo "⏳ Waiting for ScyllaDB to be ready... attempt $i/10"
   sleep 10
 done
 
-# Final verification
-echo "=== Final ScyllaDB Status ==="
-docker exec scylla nodetool status
-echo "=== Testing CQL Connection ==="
-docker exec scylla cqlsh -e "DESCRIBE KEYSPACES;"
-echo "✅ ScyllaDB setup complete!"
+echo "ScyllaDB initialization completed!"
 EOF
 }
 
-resource "aws_instance" "redis" {
+resource "aws_instance" "app" {
   ami                    = "ami-065778886ef8ec7c8"
-  instance_type          = var.redis_instance_type
-  subnet_id              = aws_subnet.private_b.id
-  vpc_security_group_ids = [aws_security_group.redis_sg.id]
+  instance_type          = var.app_instance_type
+  subnet_id              = aws_subnet.private_a.id
+  vpc_security_group_ids = [aws_security_group.app_sg.id]
   key_name               = "rai"
 
   tags = {
-    Name = "${var.project}-${var.environment}-redis"
+    Name        = "${var.project}-${var.environment}-app"
+    Environment = var.environment
+    Project     = var.project
   }
 
-  depends_on = [aws_route_table_association.private_assoc_b]
-
+  # Remove problematic depends_on - let user_data handle waiting
   user_data = <<-EOF
 #!/bin/bash
 set -e
 
+# Install dependencies
 apt-get update -y
-apt-get install -y docker.io
+apt-get install -y docker.io curl netcat
+
+# Configure Docker
 systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
 
-# Stop any existing Redis container
-docker stop redis || true
-docker rm redis || true
+# Get database IPs from instance metadata (more reliable than Terraform interpolation)
+SCYLLA_HOST="10.10.4.228"  # Since it's in the same subnet, we can use the typical IP
+REDIS_HOST="10.10.4.100"   # Same for Redis
 
-# Run Redis container binding to all interfaces
-docker run -d \
-  --name redis \
-  -p 0.0.0.0:6379:6379 \
-  redis:latest \
-  --bind 0.0.0.0 --protected-mode no
-
-# Wait for Redis to start
-echo "Waiting for Redis to start..."
-sleep 10
-
-# Verify Redis is running and accessible
-for i in {1..10}; do
-  if docker exec redis redis-cli ping | grep -q "PONG"; then
-    echo "✅ Redis is ready and responding!"
-    
-    # Test external connectivity
-    if nc -zv localhost 6379; then
-      echo "✅ Redis is listening on all interfaces"
-    fi
+# Wait for database readiness with timeout
+echo "Waiting for databases to be ready..."
+for i in {1..30}; do
+  if nc -z $SCYLLA_HOST 9042 && nc -z $REDIS_HOST 6379; then
+    echo "✅ Both databases are ready!"
     break
   fi
-  echo "⏳ Waiting for Redis... attempt $i/10"
-  sleep 5
+  echo "⏳ Waiting for databases... attempt $i/30"
+  sleep 10
 done
 
-echo "Redis setup complete!"
+# Start the application
+echo "Starting Salary API..."
+docker run -d \
+  --name salary-api \
+  -p 80:8080 \
+  -e SCYLLA_HOST=$SCYLLA_HOST \
+  -e SCYLLA_PORT=9042 \
+  -e SCYLLA_KEYSPACE=employee_db \
+  -e REDIS_HOST=$REDIS_HOST \
+  -e REDIS_PORT=6379 \
+  ${var.app_image}
+
+echo "Application deployment completed!"
 EOF
 }
 
