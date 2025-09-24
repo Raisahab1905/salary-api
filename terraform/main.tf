@@ -231,6 +231,14 @@ resource "aws_security_group" "scylla_sg" {
   }
 
   ingress {
+    from_port       = 9042
+    to_port         = 9042
+    protocol        = "tcp"
+    cidr_blocks     = [var.vpc_cidr]  # Allow from entire VPC
+    description     = "Allow Scylla from VPC"
+  }
+
+  ingress {
     from_port       = 22
     to_port         = 22
     protocol        = "tcp"
@@ -263,6 +271,14 @@ resource "aws_security_group" "redis_sg" {
     to_port         = 6379
     protocol        = "tcp"
     security_groups = [aws_security_group.app_sg.id]  # allow app to connect
+  }
+
+  ingress {
+    from_port       = 6379
+    to_port         = 6379
+    protocol        = "tcp"
+    cidr_blocks     = [var.vpc_cidr]  # Allow from entire VPC
+    description     = "Allow Redis from VPC"
   }
   
   ingress {
