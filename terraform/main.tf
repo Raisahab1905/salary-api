@@ -476,17 +476,13 @@ resource "aws_instance" "app" {
               git clone https://github.com/Raisahab1905/salary-api.git
               cd salary-api
 
-              # Run DB migrations from repo
-              if [ -d "./migrations" ]; then
-                echo "🚀 Running DB migrations..."
-                for f in ./migrations/*.cql; do
-                  [ -e "$f" ] || continue
-                  docker run --rm --network host cassandra:4.1 cqlsh $SCYLLA_HOST -f "$f"
-                done
-                echo "✅ Migrations completed."
-              else
-                echo "⚠️ No migrations directory found, skipping..."
-              fi
+              # Copy wait-for script
+              cp wait-for.sh /usr/local/bin/wait-for
+              chmod +x /usr/local/bin/wait-for
+
+              # Wait for DB services
+              wait-for $SCYLLA_HOST 9042 60
+              wait-for $REDIS_HOST 6379 60  
 
               # Start Salary API container
               echo "✅ Starting Salary API..."
