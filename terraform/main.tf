@@ -465,14 +465,45 @@ resource "aws_instance" "redis" {
 
   user_data = <<-EOF
 #!/bin/bash
+set -e
+
 apt-get update -y
 apt-get install -y docker.io
 systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
 
-# Run Redis container
-docker run -d --name redis -p 6379:6379 redis:latest
+# Stop any existing Redis container
+docker stop redis || true
+docker rm redis || true
+
+# Run Redis container binding to all interfaces
+docker run -d \
+  --name redis \
+  -p 0.0.0.0:6379:6379 \
+  redis:latest \
+  --bind 0.0.0.0 --protected-mode no
+
+# Wait for Redis to start
+echo "Waiting for Redis to start..."
+sleep 10
+
+# Verify Redis is running and accessible
+for i in {1..10}; do
+  if docker exec redis redis-cli ping | grep -q "PONG"; then
+    echo "✅ Redis is ready and responding!"
+    
+    # Test external connectivity
+    if nc -zv localhost 6379; then
+      echo "✅ Redis is listening on all interfaces"
+    fi
+    break
+  fi
+  echo "⏳ Waiting for Redis... attempt $i/10"
+  sleep 5
+done
+
+echo "Redis setup complete!"
 EOF
 }
 
