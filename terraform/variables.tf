@@ -45,7 +45,7 @@ variable "app_instance_type" {
 
 variable "scylla_instance_type" {
   type    = string
-  default = "t3.small"
+  default = "t3.medium"
 }
 
 variable "redis_instance_type" {
