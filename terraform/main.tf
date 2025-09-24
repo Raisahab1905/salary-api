@@ -373,27 +373,80 @@ resource "aws_lb_listener" "app_listener" {
 # ------------------------
 resource "aws_instance" "scylla" {
   ami                    = "ami-065778886ef8ec7c8"
-  instance_type          = var.scylla_instance_type
+  instance_type          = "t3.medium"  # Increased memory
   subnet_id              = aws_subnet.private_b.id
   vpc_security_group_ids = [aws_security_group.scylla_sg.id]
-  key_name               = "rai" # Use existing key
+  key_name               = "rai"
 
   tags = {
     Name = "${var.project}-${var.environment}-scylla"
   }
 
-  depends_on = [aws_route_table_association.private_assoc_b]
-
   user_data = <<-EOF
 #!/bin/bash
+set -e
+
+# Update and install dependencies
 apt-get update -y
-apt-get install -y docker.io
+apt-get install -y docker.io curl
+
+# Configure Docker
 systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
 
-# Run Scylla container
-docker run -d --name scylla -p 9042:9042 scylladb/scylla:latest
+# Add swap for memory issues
+fallocate -l 2G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+# Wait for network and get private IP
+sleep 30
+PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+
+# Stop any existing Scylla container
+docker stop scylla || true
+docker rm scylla || true
+
+# Run ScyllaDB with host networking and proper binding
+docker run -d \
+  --name scylla \
+  --network host \
+  --memory 1G \
+  -v /var/lib/scylla:/var/lib/scylla \
+  scylladb/scylla:latest \
+  --listen-address 0.0.0.0 \
+  --rpc-address 0.0.0.0 \
+  --broadcast-address $PRIVATE_IP \
+  --developer-mode 1 \
+  --overprovisioned 1
+
+# Wait for Scylla to start
+echo "Waiting for ScyllaDB to start..."
+sleep 60
+
+# Check if Scylla is running and accessible
+for i in {1..30}; do
+  if docker exec scylla nodetool status | grep -q "UN"; then
+    echo "✅ ScyllaDB is ready and accessible!"
+    
+    # Create the required keyspace
+    docker exec scylla cqlsh -e "CREATE KEYSPACE IF NOT EXISTS employee_db WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};"
+    echo "✅ Keyspace 'employee_db' created successfully!"
+    break
+  fi
+  echo "⏳ Waiting for ScyllaDB to be ready... attempt $i/30"
+  sleep 10
+done
+
+# Final verification
+echo "=== Final ScyllaDB Status ==="
+docker exec scylla nodetool status
+echo "=== Testing CQL Connection ==="
+docker exec scylla cqlsh -e "DESCRIBE KEYSPACES;"
+echo "✅ ScyllaDB setup complete!"
 EOF
 }
 
