@@ -486,7 +486,7 @@ resource "aws_instance" "app" {
 
               # Start Salary API container
               echo "✅ Starting Salary API..."
-              docker run -d -p 8080:8080 \
+              docker run -d -p 80:8080 \
                 -e SCYLLA_HOST=$SCYLLA_HOST \
                 -e SCYLLA_PORT=9042 \
                 -e SCYLLA_KEYSPACE=employee_db \
