@@ -189,8 +189,8 @@ resource "aws_security_group" "app_sg" {
   name   = "${var.project}-${var.environment}-sg"
 
   ingress {
-    from_port       = 8080
-    to_port         = 8080
+    from_port       = 80
+    to_port         = 80
     protocol        = "tcp"
     security_groups = [aws_security_group.alb_sg.id] # Allow ALB traffic
   }
@@ -332,7 +332,7 @@ resource "aws_lb" "app_alb" {
 # Target Group
 resource "aws_lb_target_group" "app_tg" {
   name        = "${var.project}-${var.environment}-tg"
-  port        = 8080
+  port        = 80
   protocol    = "HTTP"
   target_type = "instance"
   vpc_id      = aws_vpc.main.id
@@ -341,7 +341,7 @@ resource "aws_lb_target_group" "app_tg" {
     enabled             = true
     interval            = 30
     path                = "/actuator/health"  # Spring Boot actuator endpoint
-    port                = "8080"
+    port                = "80"
     protocol            = "HTTP"
     timeout             = 5
     healthy_threshold   = 2
