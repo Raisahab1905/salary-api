@@ -489,77 +489,40 @@ echo "Application deployment completed!"
 EOF
 }
 
-resource "aws_instance" "app" {
+resource "aws_instance" "redis" {
   ami                    = "ami-065778886ef8ec7c8"
-  instance_type          = var.app_instance_type
-  subnet_id              = aws_subnet.private_a.id
-  vpc_security_group_ids = [aws_security_group.app_sg.id]
+  instance_type          = var.redis_instance_type
+  subnet_id              = aws_subnet.private_b.id
+  vpc_security_group_ids = [aws_security_group.redis_sg.id]
   key_name               = "rai"
 
   tags = {
-    Name        = "${var.project}-${var.environment}-app"
-    Environment = var.environment
-    Project     = var.project
+    Name = "${var.project}-${var.environment}-redis"
   }
 
-  depends_on = [
-    aws_route_table_association.private_assoc_a,
-    aws_instance.scylla,
-    aws_instance.redis
-  ]
-
   user_data = <<-EOF
-              #!/bin/bash
-              apt-get update -y
-              apt-get install -y docker.io curl git netcat
+#!/bin/bash
+set -e
 
-              # Install Docker Compose v2
-              DOCKER_COMPOSE_VERSION="v2.10.0"
-              curl -L "https://github.com/docker/compose/releases/download/$DOCKER_COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-              chmod +x /usr/local/bin/docker-compose
+apt-get update -y
+apt-get install -y docker.io
+systemctl enable docker
+systemctl start docker
+usermod -aG docker ubuntu
 
-              systemctl enable docker
-              systemctl start docker
-              usermod -aG docker ubuntu
+# Stop any existing Redis container
+docker stop redis || true
+docker rm redis || true
 
-              SCYLLA_HOST=${aws_instance.scylla.private_ip}
-              REDIS_HOST=${aws_instance.redis.private_ip}
+# Run Redis container binding to all interfaces
+docker run -d \
+  --name redis \
+  -p 0.0.0.0:6379:6379 \
+  redis:latest \
+  --bind 0.0.0.0 --protected-mode no
 
-              # Wait for Scylla readiness
-              until nc -z $SCYLLA_HOST 9042; do
-                echo "⏳ Waiting for Scylla at $SCYLLA_HOST:9042..."
-                sleep 15
-              done
-
-              # Wait for Redis readiness
-              until nc -z $REDIS_HOST 6379; do
-                echo "⏳ Waiting for Redis at $REDIS_HOST:6379..."
-                sleep 10
-              done
-
-              # Clone repo
-              cd /home/ubuntu
-              git clone https://github.com/Raisahab1905/salary-api.git
-              cd salary-api
-
-              # Copy wait-for script
-              cp wait-for.sh /usr/local/bin/wait-for
-              chmod +x /usr/local/bin/wait-for
-
-              # Wait for DB services
-              wait-for $SCYLLA_HOST 9042 60
-              wait-for $REDIS_HOST 6379 60  
-
-              # Start Salary API container
-              echo "✅ Starting Salary API..."
-              docker run -d -p 80:8080 \
-                -e SCYLLA_HOST=$SCYLLA_HOST \
-                -e SCYLLA_PORT=9042 \
-                -e SCYLLA_KEYSPACE=employee_db \
-                -e REDIS_HOST=$REDIS_HOST \
-                -e REDIS_PORT=6379 \
-                ${var.app_image}
-              EOF
+echo "Redis setup complete!"
+EOF
 }
 
 # ------------------------
