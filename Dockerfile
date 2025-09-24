@@ -25,7 +25,7 @@ WORKDIR /app
 COPY --from=build --chown=spring:spring /app/target/*.jar app.jar
 
 # Use wait script as entrypoint wrapper
-COPY docker-entrypoint.sh /usr/local/bin/
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
