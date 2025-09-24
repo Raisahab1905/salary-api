@@ -452,8 +452,17 @@ systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
 
-# Wait for Scylla and Redis (basic wait)
-sleep 60
+# Wait for Scylla readiness
+until nc -z ${aws_instance.scylla.private_ip} 9042; do
+  echo "Waiting for Scylla..."
+  sleep 15
+done
+
+# Wait for Redis readiness
+until nc -z ${aws_instance.redis.private_ip} 6379; do
+  echo "Waiting for Redis..."
+  sleep 10
+done
 
 # Set environment variables
 SCYLLA_HOST="${aws_instance.scylla.private_ip}"
@@ -464,10 +473,34 @@ cd /home/ubuntu
 git clone https://github.com/Raisahab1905/salary-api.git
 cd salary-api
 
+#!/bin/bash
+apt-get update -y
+apt-get install -y docker.io netcat
+
+SCYLLA_HOST="${aws_instance.scylla.private_ip}"
+REDIS_HOST="${aws_instance.redis.private_ip}"
+
+# Wait for Scylla
+until nc -z $SCYLLA_HOST 9042; do
+  echo "⏳ Waiting for Scylla at $SCYLLA_HOST:9042..."
+  sleep 15
+done
+
+# Wait for Redis
+until nc -z $REDIS_HOST 6379; do
+  echo "⏳ Waiting for Redis at $REDIS_HOST:6379..."
+  sleep 10
+done
+
+echo "✅ Starting Salary API..."
 docker run -d -p 8080:8080 \
   -e SCYLLA_HOST=$SCYLLA_HOST \
+  -e SCYLLA_PORT=9042 \
+  -e SCYLLA_KEYSPACE=employee_db \
   -e REDIS_HOST=$REDIS_HOST \
+  -e REDIS_PORT=6379 \
   ${var.app_image}
+
 
 EOF
 }
