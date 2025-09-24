@@ -502,7 +502,7 @@ resource "aws_instance" "app" {
 resource "aws_lb_target_group_attachment" "app_tg_attachment" {
   target_group_arn = aws_lb_target_group.app_tg.arn
   target_id        = aws_instance.app.id
-  port             = 8080
+  port             = 80
 }
 
 # ------------------------
