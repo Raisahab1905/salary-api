@@ -245,18 +245,6 @@ systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
 
-SCYLLA_HOST="${aws_instance.scylla.private_ip}"
-REDIS_HOST="${aws_instance.redis.private_ip}"
-
-# Wait for DBs
-for i in {1..40}; do
-  if nc -z $SCYLLA_HOST 9042 && nc -z $REDIS_HOST 6379; then
-    echo "Databases ready!"
-    break
-  fi
-  sleep 10
-done
-
 # Run app
 docker stop salary-api || true
 docker rm salary-api || true
