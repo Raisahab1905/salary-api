@@ -177,6 +177,13 @@ resource "aws_security_group" "scylla_sg" {
     security_groups = [aws_security_group.app_sg.id] # Only app can access
   }
 
+  ingress {
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.app_sg.id]  # allow db to connect
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -201,6 +208,13 @@ resource "aws_security_group" "redis_sg" {
     to_port         = 6379
     protocol        = "tcp"
     security_groups = [aws_security_group.app_sg.id] # Only app can access
+  }
+
+  ingress {
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.app_sg.id]  # allow db to connect
   }
 
   egress {
