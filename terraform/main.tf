@@ -288,22 +288,47 @@ resource "aws_instance" "scylla" {
   user_data = <<-EOF
 #!/bin/bash
 set -e
+
+# Update and install Docker
 apt-get update -y
 apt-get install -y docker.io curl
 systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
 
+# Get private IP
+PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+
+# Stop any existing Scylla container
 docker stop scylla || true
 docker rm scylla || true
 
-PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
-
-docker run -d --name scylla --network host scylladb/scylla:latest \
+# Run Scylla with HOST networking
+docker run -d \
+  --name scylla \
+  --network host \
+  scylladb/scylla:latest \
   --listen-address 0.0.0.0 \
   --rpc-address 0.0.0.0 \
   --broadcast-address $PRIVATE_IP \
   --developer-mode 1
+
+# Wait for Scylla to start and create keyspace
+echo "Waiting for ScyllaDB to start..."
+for i in {1..30}; do
+  if docker exec scylla cqlsh -e "DESCRIBE KEYSPACES;" 2>/dev/null; then
+    echo "✅ ScyllaDB is running!"
+    
+    # Create the required keyspace
+    docker exec scylla cqlsh -e "CREATE KEYSPACE IF NOT EXISTS employee_db WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};"
+    echo "✅ Keyspace 'employee_db' created successfully!"
+    break
+  fi
+  echo "⏳ Waiting for ScyllaDB to be ready... attempt $i/30"
+  sleep 10
+done
+
+echo "ScyllaDB initialization completed!"
 EOF
 }
 
@@ -319,15 +344,24 @@ resource "aws_instance" "redis" {
   user_data = <<-EOF
 #!/bin/bash
 set -e
+
 apt-get update -y
 apt-get install -y docker.io
 systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
 
+# Stop any existing Redis container
 docker stop redis || true
 docker rm redis || true
 
-docker run -d --name redis -p 6379:6379 redis:latest --bind 0.0.0.0 --protected-mode no
+# Run Redis container binding to all interfaces
+docker run -d \
+  --name redis \
+  -p 0.0.0.0:6379:6379 \
+  redis:latest \
+  --bind 0.0.0.0 --protected-mode no
+
+echo "Redis setup complete!"
 EOF
 }
