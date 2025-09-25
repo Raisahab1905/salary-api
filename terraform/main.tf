@@ -148,7 +148,7 @@ resource "aws_security_group" "app_sg" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.my_ip]    # Replace var.my_ip with your dynamic IP variable
+    cidr_blocks = ["${var.my_ip}/32"]    # Replace var.my_ip with your dynamic IP variable
   }
 
   egress {
