@@ -25,9 +25,7 @@ resource "aws_subnet" "public_a" {
   availability_zone       = data.aws_availability_zones.available.names[0]
   map_public_ip_on_launch = true
 
-  tags = {
-    Name = "${var.project}-${var.environment}-public-a"
-  }
+  tags = { Name = "${var.project}-${var.environment}-public-a" }
 }
 
 resource "aws_subnet" "public_b" {
@@ -36,9 +34,7 @@ resource "aws_subnet" "public_b" {
   availability_zone       = data.aws_availability_zones.available.names[1]
   map_public_ip_on_launch = true
 
-  tags = {
-    Name = "${var.project}-${var.environment}-public-b"
-  }
+  tags = { Name = "${var.project}-${var.environment}-public-b" }
 }
 
 resource "aws_subnet" "private_a" {
@@ -46,9 +42,7 @@ resource "aws_subnet" "private_a" {
   cidr_block        = var.private_subnet_cidr_a
   availability_zone = data.aws_availability_zones.available.names[0]
 
-  tags = {
-    Name = "${var.project}-${var.environment}-private-a"
-  }
+  tags = { Name = "${var.project}-${var.environment}-private-a" }
 }
 
 resource "aws_subnet" "private_b" {
@@ -56,9 +50,7 @@ resource "aws_subnet" "private_b" {
   cidr_block        = var.private_subnet_cidr_b
   availability_zone = data.aws_availability_zones.available.names[1]
 
-  tags = {
-    Name = "${var.project}-${var.environment}-private-b"
-  }
+  tags = { Name = "${var.project}-${var.environment}-private-b" }
 }
 
 # ------------------------
@@ -67,9 +59,7 @@ resource "aws_subnet" "private_b" {
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main.id
 
-  tags = {
-    Name = "${var.project}-${var.environment}-igw"
-  }
+  tags = { Name = "${var.project}-${var.environment}-igw" }
 }
 
 # ------------------------
@@ -87,10 +77,7 @@ resource "aws_nat_gateway" "nat" {
   allocation_id = aws_eip.nat.id
   subnet_id     = aws_subnet.public_a.id
 
-  tags = {
-    Name = "${var.project}-${var.environment}-nat"
-  }
-
+  tags = { Name = "${var.project}-${var.environment}-nat" }
   depends_on = [aws_internet_gateway.igw]
 }
 
@@ -105,9 +92,7 @@ resource "aws_route_table" "public" {
     gateway_id = aws_internet_gateway.igw.id
   }
 
-  tags = {
-    Name = "${var.project}-${var.environment}-public-rt"
-  }
+  tags = { Name = "${var.project}-${var.environment}-public-rt" }
 }
 
 resource "aws_route_table" "private" {
@@ -118,9 +103,7 @@ resource "aws_route_table" "private" {
     nat_gateway_id = aws_nat_gateway.nat.id
   }
 
-  tags = {
-    Name = "${var.project}-${var.environment}-private-rt"
-  }
+  tags = { Name = "${var.project}-${var.environment}-private-rt" }
 }
 
 # ------------------------
@@ -149,57 +132,23 @@ resource "aws_route_table_association" "private_assoc_b" {
 # ------------------------
 # Security Groups
 # ------------------------
-# ALB SG
-resource "aws_security_group" "alb_sg" {
-  vpc_id = aws_vpc.main.id
-  name   = "${var.project}-${var.environment}-alb-sg"
-  description = "Allow internet to ALB and ALB to App"
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.project}-${var.environment}-alb-sg"
-    Project     = var.project
-    Environment = var.environment
-  }
-}
-
 # App EC2 SG
 resource "aws_security_group" "app_sg" {
   vpc_id = aws_vpc.main.id
-  name   = "${var.project}-${var.environment}-sg"
+  name   = "${var.project}-${var.environment}-app-sg"
 
   ingress {
-    from_port       = 80
-    to_port         = 80
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb_sg.id] # Allow ALB traffic
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # Public access to app
   }
 
   ingress {
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    security_groups = [aws_security_group.bastion_sg.id]  # allow app to connect
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.my_ip]    # Replace var.my_ip with your dynamic IP variable
   }
 
   egress {
@@ -210,32 +159,22 @@ resource "aws_security_group" "app_sg" {
   }
 
   tags = {
-    Name = "${var.project}-${var.environment}-sg"
+    Name = "${var.project}-${var.environment}-app-sg"
     Project     = var.project
     Environment = var.environment
   }
 }
 
 # Scylla SG
-
 resource "aws_security_group" "scylla_sg" {
   vpc_id = aws_vpc.main.id
   name   = "${var.project}-${var.environment}-scylla-sg"
-  description = "Allow Scylla traffic from app layer"
 
   ingress {
     from_port       = 9042
     to_port         = 9042
     protocol        = "tcp"
-    cidr_blocks     = [var.vpc_cidr]  # Allow from entire VPC
-    description     = "Allow Scylla from VPC"
-  }
-
-  ingress {
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    security_groups = [aws_security_group.bastion_sg.id]  # allow app to connect
+    security_groups = [aws_security_group.app_sg.id] # Only app can access
   }
 
   egress {
@@ -253,25 +192,15 @@ resource "aws_security_group" "scylla_sg" {
 }
 
 # Redis SG
-
 resource "aws_security_group" "redis_sg" {
   vpc_id = aws_vpc.main.id
   name   = "${var.project}-${var.environment}-redis-sg"
-  description = "Allow Redis traffic from app layer"
 
   ingress {
     from_port       = 6379
     to_port         = 6379
     protocol        = "tcp"
-    cidr_blocks     = [var.vpc_cidr]  # Allow from entire VPC
-    description     = "Allow Redis from VPC"
-  }
-  
-  ingress {
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    security_groups = [aws_security_group.bastion_sg.id]  # allow app to connect
+    security_groups = [aws_security_group.app_sg.id] # Only app can access
   }
 
   egress {
@@ -288,153 +217,13 @@ resource "aws_security_group" "redis_sg" {
   }
 }
 
-# Bastion SG
-resource "aws_security_group" "bastion_sg" {
-  vpc_id = aws_vpc.main.id
-  name   = "${var.project}-${var.environment}-bastion-sg"
-
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # <-- replace with your IP
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.project}-${var.environment}-bastion-sg"
-  }
-}
-
-# ------------------------
-# Application Load Balancer
-# ------------------------
-resource "aws_lb" "app_alb" {
-  name               = "${var.project}-${var.environment}-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb_sg.id]
-  subnets            = [aws_subnet.public_a.id, aws_subnet.public_b.id]
-
-  tags = {
-    Name = "${var.project}-${var.environment}-alb"
-    Environment = var.environment
-    Project     = var.project
-  }
-
-  depends_on = [aws_subnet.public_a, aws_subnet.public_b]
-}
-
-# Target Group
-resource "aws_lb_target_group" "app_tg" {
-  name        = "${var.project}-${var.environment}-tg"
-  port        = 80
-  protocol    = "HTTP"
-  target_type = "instance"
-  vpc_id      = aws_vpc.main.id
-
-  health_check {
-    enabled             = true
-    interval            = 30
-    path                = "/actuator/health"  # Spring Boot actuator endpoint
-    port                = "80"
-    protocol            = "HTTP"
-    timeout             = 5
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-    matcher             = "200-399"
-  }
-
-  tags = {
-    Name = "${var.project}-${var.environment}-tg"
-    Environment = var.environment
-    Project     = var.project
-  }
-}
-
-# Listener
-resource "aws_lb_listener" "app_listener" {
-  load_balancer_arn = aws_lb.app_alb.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.app_tg.arn
-  }
-}
-
 # ------------------------
 # EC2 Instances
 # ------------------------
-resource "aws_instance" "scylla" {
-  ami                    = "ami-065778886ef8ec7c8"
-  instance_type          = "t3.medium"
-  subnet_id              = aws_subnet.private_b.id
-  vpc_security_group_ids = [aws_security_group.scylla_sg.id]
-  key_name               = "rai"
-
-  tags = {
-    Name = "${var.project}-${var.environment}-scylla"
-  }
-
-  user_data = <<-EOF
-#!/bin/bash
-set -e
-
-# Update and install Docker
-apt-get update -y
-apt-get install -y docker.io curl
-systemctl enable docker
-systemctl start docker
-usermod -aG docker ubuntu
-
-# Get private IP
-PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
-
-# Stop any existing Scylla container
-docker stop scylla || true
-docker rm scylla || true
-
-# Run Scylla with HOST networking
-docker run -d \
-  --name scylla \
-  --network host \
-  scylladb/scylla:latest \
-  --listen-address 0.0.0.0 \
-  --rpc-address 0.0.0.0 \
-  --broadcast-address $PRIVATE_IP \
-  --developer-mode 1
-
-# Wait for Scylla to start and create keyspace
-echo "Waiting for ScyllaDB to start..."
-for i in {1..30}; do
-  if docker exec scylla cqlsh -e "DESCRIBE KEYSPACES;" 2>/dev/null; then
-    echo "✅ ScyllaDB is running!"
-    
-    # Create the required keyspace
-    docker exec scylla cqlsh -e "CREATE KEYSPACE IF NOT EXISTS employee_db WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};"
-    echo "✅ Keyspace 'employee_db' created successfully!"
-    break
-  fi
-  echo "⏳ Waiting for ScyllaDB to be ready... attempt $i/30"
-  sleep 10
-done
-
-echo "ScyllaDB initialization completed!"
-EOF
-}
-
 resource "aws_instance" "app" {
   ami                    = "ami-065778886ef8ec7c8"
   instance_type          = var.app_instance_type
-  subnet_id              = aws_subnet.private_a.id
+  subnet_id              = aws_subnet.public_a.id
   vpc_security_group_ids = [aws_security_group.app_sg.id]
   key_name               = "rai"
 
@@ -444,51 +233,34 @@ resource "aws_instance" "app" {
     Project     = var.project
   }
 
-  # Wait for databases to be ready
   depends_on = [aws_instance.scylla, aws_instance.redis]
 
   user_data = <<-EOF
 #!/bin/bash
 set -e
 
-# Install dependencies
 apt-get update -y
 apt-get install -y docker.io curl netcat
-
-# Configure Docker
 systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
 
-# Database IPs
-SCYLLA_HOST="10.10.4.228"
-REDIS_HOST="10.10.4.100"
+SCYLLA_HOST="${aws_instance.scylla.private_ip}"
+REDIS_HOST="${aws_instance.redis.private_ip}"
 
-# Wait for database readiness with timeout and keyspace creation
-echo "Waiting for databases to be ready and creating keyspace..."
+# Wait for DBs
 for i in {1..40}; do
   if nc -z $SCYLLA_HOST 9042 && nc -z $REDIS_HOST 6379; then
-    echo "✅ Databases are ready!"
-    
-    # Create keyspace in ScyllaDB (CRITICAL STEP)
-    echo "Creating employee_db keyspace..."
-    docker run --rm --network host scylladb/scylla:latest \
-      cqlsh $SCYLLA_HOST -e "CREATE KEYSPACE IF NOT EXISTS employee_db WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};" \
-      && echo "✅ Keyspace created successfully!" \
-      || echo "⚠️ Keyspace creation failed, but continuing..."
-    
+    echo "Databases ready!"
     break
   fi
-  echo "⏳ Waiting for databases... attempt $i/40"
   sleep 10
 done
 
-# Stop any existing container
+# Run app
 docker stop salary-api || true
 docker rm salary-api || true
 
-# Start the application with proper configuration
-echo "Starting Salary API..."
 docker run -d \
   --name salary-api \
   -p 80:8080 \
@@ -498,83 +270,62 @@ docker run -d \
   -e REDIS_HOST=$REDIS_HOST \
   -e REDIS_PORT=6379 \
   -e SPRING_PROFILES_ACTIVE=dev \
-  -e MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics \
   ${var.app_image}
+EOF
+}
 
-# Wait and verify application started
-sleep 30
-echo "=== Application Status ==="
-docker ps -a
-echo "=== Recent Logs ==="
-docker logs salary-api --tail 20 || echo "No logs available"
+resource "aws_instance" "scylla" {
+  ami                    = "ami-065778886ef8ec7c8"
+  instance_type          = var.scylla_instance_type
+  subnet_id              = aws_subnet.private_b.id
+  vpc_security_group_ids = [aws_security_group.scylla_sg.id]
+  key_name               = "rai"
 
-echo "Application deployment completed!"
+  tags = { Name = "${var.project}-${var.environment}-scylla" }
+
+  user_data = <<-EOF
+#!/bin/bash
+set -e
+apt-get update -y
+apt-get install -y docker.io curl
+systemctl enable docker
+systemctl start docker
+usermod -aG docker ubuntu
+
+docker stop scylla || true
+docker rm scylla || true
+
+PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+
+docker run -d --name scylla --network host scylladb/scylla:latest \
+  --listen-address 0.0.0.0 \
+  --rpc-address 0.0.0.0 \
+  --broadcast-address $PRIVATE_IP \
+  --developer-mode 1
 EOF
 }
 
 resource "aws_instance" "redis" {
   ami                    = "ami-065778886ef8ec7c8"
   instance_type          = var.redis_instance_type
-  subnet_id              = aws_subnet.private_b.id
+  subnet_id              = aws_subnet.private_a.id
   vpc_security_group_ids = [aws_security_group.redis_sg.id]
   key_name               = "rai"
 
-  tags = {
-    Name = "${var.project}-${var.environment}-redis"
-  }
+  tags = { Name = "${var.project}-${var.environment}-redis" }
 
   user_data = <<-EOF
 #!/bin/bash
 set -e
-
 apt-get update -y
 apt-get install -y docker.io
 systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
 
-# Stop any existing Redis container
 docker stop redis || true
 docker rm redis || true
 
-# Run Redis container binding to all interfaces
-docker run -d \
-  --name redis \
-  -p 0.0.0.0:6379:6379 \
-  redis:latest \
-  --bind 0.0.0.0 --protected-mode no
-
-echo "Redis setup complete!"
-EOF
-}
-
-# ------------------------
-# Register App Instance with Target Group
-# ------------------------
-resource "aws_lb_target_group_attachment" "app_tg_attachment" {
-  target_group_arn = aws_lb_target_group.app_tg.arn
-  target_id        = aws_instance.app.id
-  port             = 80
-}
-
-# ------------------------
-# Bastion Host
-# ------------------------
-resource "aws_instance" "bastion" {
-  ami                         = "ami-065778886ef8ec7c8"
-  instance_type               = "t2.micro"
-  subnet_id                   = aws_subnet.public_a.id
-  vpc_security_group_ids      = [aws_security_group.bastion_sg.id]
-  associate_public_ip_address = true
-  key_name                    = "rai"
-
-  tags = {
-    Name = "${var.project}-${var.environment}-bastion"
-  }
-
-  user_data = <<-EOF
-#!/bin/bash
-apt-get update -y
-apt-get install -y htop
+docker run -d --name redis -p 6379:6379 redis:latest --bind 0.0.0.0 --protected-mode no
 EOF
 }

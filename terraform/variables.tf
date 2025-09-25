@@ -55,5 +55,10 @@ variable "redis_instance_type" {
 
 variable "app_image" {
   type        = string
-  description = "Container image"
+  description = "Container image for the app"
+}
+
+variable "my_ip" {
+  type        = string
+  description = "Your current public IP for SSH access"
 }
