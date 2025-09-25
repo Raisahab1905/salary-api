@@ -402,7 +402,7 @@ PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 docker stop scylla || true
 docker rm scylla || true
 
-# Run Scylla with HOST networking (critical fix)
+# Run Scylla with HOST networking
 docker run -d \
   --name scylla \
   --network host \
@@ -412,18 +412,18 @@ docker run -d \
   --broadcast-address $PRIVATE_IP \
   --developer-mode 1
 
-# Wait for Scylla to start
+# Wait for Scylla to start and create keyspace
 echo "Waiting for ScyllaDB to start..."
-sleep 60
-
-# Create keyspace with retry logic
-for i in {1..10}; do
+for i in {1..30}; do
   if docker exec scylla cqlsh -e "DESCRIBE KEYSPACES;" 2>/dev/null; then
-    docker exec scylla cqlsh -e "CREATE KEYSPACE IF NOT EXISTS employee_db WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};" 2>/dev/null
-    echo "✅ ScyllaDB setup complete with keyspace!"
+    echo "✅ ScyllaDB is running!"
+    
+    # Create the required keyspace
+    docker exec scylla cqlsh -e "CREATE KEYSPACE IF NOT EXISTS employee_db WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};"
+    echo "✅ Keyspace 'employee_db' created successfully!"
     break
   fi
-  echo "⏳ Waiting for ScyllaDB to be ready... attempt $i/10"
+  echo "⏳ Waiting for ScyllaDB to be ready... attempt $i/30"
   sleep 10
 done
 
@@ -444,7 +444,9 @@ resource "aws_instance" "app" {
     Project     = var.project
   }
 
-  # Remove problematic depends_on - let user_data handle waiting
+  # Wait for databases to be ready
+  depends_on = [aws_instance.scylla, aws_instance.redis]
+
   user_data = <<-EOF
 #!/bin/bash
 set -e
@@ -458,22 +460,34 @@ systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
 
-# Get database IPs from instance metadata (more reliable than Terraform interpolation)
-SCYLLA_HOST="10.10.4.228"  # Since it's in the same subnet, we can use the typical IP
-REDIS_HOST="10.10.4.100"   # Same for Redis
+# Database IPs
+SCYLLA_HOST="10.10.4.228"
+REDIS_HOST="10.10.4.100"
 
-# Wait for database readiness with timeout
-echo "Waiting for databases to be ready..."
-for i in {1..30}; do
+# Wait for database readiness with timeout and keyspace creation
+echo "Waiting for databases to be ready and creating keyspace..."
+for i in {1..40}; do
   if nc -z $SCYLLA_HOST 9042 && nc -z $REDIS_HOST 6379; then
-    echo "✅ Both databases are ready!"
+    echo "✅ Databases are ready!"
+    
+    # Create keyspace in ScyllaDB (CRITICAL STEP)
+    echo "Creating employee_db keyspace..."
+    docker run --rm --network host scylladb/scylla:latest \
+      cqlsh $SCYLLA_HOST -e "CREATE KEYSPACE IF NOT EXISTS employee_db WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};" \
+      && echo "✅ Keyspace created successfully!" \
+      || echo "⚠️ Keyspace creation failed, but continuing..."
+    
     break
   fi
-  echo "⏳ Waiting for databases... attempt $i/30"
+  echo "⏳ Waiting for databases... attempt $i/40"
   sleep 10
 done
 
-# Start the application
+# Stop any existing container
+docker stop salary-api || true
+docker rm salary-api || true
+
+# Start the application with proper configuration
 echo "Starting Salary API..."
 docker run -d \
   --name salary-api \
@@ -483,7 +497,16 @@ docker run -d \
   -e SCYLLA_KEYSPACE=employee_db \
   -e REDIS_HOST=$REDIS_HOST \
   -e REDIS_PORT=6379 \
+  -e SPRING_PROFILES_ACTIVE=dev \
+  -e MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics \
   ${var.app_image}
+
+# Wait and verify application started
+sleep 30
+echo "=== Application Status ==="
+docker ps -a
+echo "=== Recent Logs ==="
+docker logs salary-api --tail 20 || echo "No logs available"
 
 echo "Application deployment completed!"
 EOF
